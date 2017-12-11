@@ -5,7 +5,7 @@ import isEqual from 'lodash.isequal';
 import classNames from 'classnames';
 import {autoBindHandlers, bottom, childrenEqual, cloneLayoutItem, compact, getLayoutItem, moveElement,
   synchronizeLayoutWithChildren, validateLayout, getFirstCollision} from './utils';
-import GridItem from './GridItem';
+import GridItem, {calcXY} from './GridItem';
 import type {ChildrenArray as ReactChildrenArray, Element as ReactElement} from 'react';
 const noop = function() {};
 
@@ -21,6 +21,7 @@ type State = {
 };
 
 export type Props = {
+  refApi: Object => void,
   className: string,
   style: Object,
   width: number,
@@ -213,6 +214,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
   }
 
   componentDidMount() {
+    this.props.refApi(this);
     this.setState({mounted: true});
     // Possibly call back with layout on mount. This should be done after correcting the layout width
     // to ensure we don't rerender with the wrong width.
@@ -295,7 +297,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
 
     // Create placeholder (display only)
     var placeholder = {
-      w: l.w, h: l.h, x: l.x, y: l.y, placeholder: true, i: i
+      w: l.w, h: l.h, x: l.x, y: l.y, i
     };
 
     // Move the element to the dragged location.
@@ -342,6 +344,55 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     });
 
     this.onLayoutMaybeChanged(newLayout, oldLayout);
+  }
+
+  externalDragIn({i, w, h, e, node, newPosition}: Object) {
+    const {layout} = this.state;
+    const {width, cols, margin, containerPadding, rowHeight, maxRows} = this.props;
+    const {x, y} = calcXY(newPosition.top, newPosition.left, {
+      containerWidth: width,
+      cols,
+      margin,
+      containerPadding: containerPadding || margin,
+      rowHeight,
+      maxRows,
+      w,
+      h
+    });
+    if (!this.state.activeDrag) {
+      const l = { i, w, h, x, y, external: true };
+      this.setState({
+        oldDragItem: l,
+        oldLayout: layout,
+        layout: [...this.state.layout, {i, w, h, x, y, external: true}],
+        activeDrag: l
+      });
+      this.props.onDragStart(layout, l, l, null, e, node);
+    } else {
+      this.onDrag(i, x, y, {e, node, newPosition});
+    }
+  }
+
+  externalDragOut({i, w, h, e, node, newPosition}: Object) {
+    this.setState((state, props) => ({
+      layout: compact(this.state.layout.filter(d => d.i !== i), this.compactType(), props.cols),
+      activeDrag: null
+    }));
+  }
+
+  externalDragStop({i, w, h, e, node, newPosition}: Object) {
+    const {width, cols, margin, containerPadding, rowHeight, maxRows} = this.props;
+    const {x, y} = calcXY(newPosition.top, newPosition.left, {
+      containerWidth: width,
+      cols,
+      margin,
+      containerPadding: containerPadding || margin,
+      rowHeight,
+      maxRows,
+      w,
+      h
+    });
+    this.onDragStop(i, x, y, { e, node, newPosition });
   }
 
   onLayoutMaybeChanged(newLayout: Layout, oldLayout: ?Layout) {
@@ -418,7 +469,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
    * @return {Element} Placeholder div.
    */
   placeholder(): ?ReactElement<any> {
-    const {activeDrag} = this.state;
+    const activeDrag = this.state.activeDrag;
     if (!activeDrag) return null;
     const {width, cols, margin, containerPadding, rowHeight, maxRows, useCSSTransforms} = this.props;
 
@@ -453,7 +504,8 @@ export default class ReactGridLayout extends React.Component<Props, State> {
   processGridItem(child: ReactElement<any>): ?ReactElement<any> {
     if (!child.key) return;
     const l = getLayoutItem(this.state.layout, String(child.key));
-    if (!l) return null;
+    const placeholder = this.state.activeDrag;
+    if (!l || placeholder && placeholder.i === l.i && placeholder.external) return null;
     const {width, cols, margin, containerPadding, rowHeight,
            maxRows, isDraggable, isResizable, useCSSTransforms,
            draggableCancel, draggableHandle} = this.props;

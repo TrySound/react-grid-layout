@@ -1,8 +1,10 @@
 import React from 'react';
 import { WidthProvider, Responsive } from 'react-grid-layout';
 import _ from 'lodash';
-const ResponsiveReactGridLayout = WidthProvider(Responsive);
+import Draggable from 'react-draggable';
 
+
+const ResponsiveReactGridLayout = WidthProvider(Responsive);
 /**
  * This layout demonstrates how to use a grid with a dynamic number of elements.
  */
@@ -20,11 +22,18 @@ class AddRemoveLayout extends React.PureComponent {
       items: [0, 1, 2, 3, 4].map(function(i, key, list) {
         return {i: i.toString(), x: i * 2, y: 0, w: 2, h: 2, add: i === (list.length - 1).toString()};
       }),
-      newCounter: 0
+      newCounter: 0,
+      placeholderPosition: { x: 0, y: 0 }
     };
 
+    this.setRef = this.setRef.bind(this);
+    this.setApi = this.setApi.bind(this);
     this.onAddItem = this.onAddItem.bind(this);
+    this.onLayoutChange = this.onLayoutChange.bind(this);
     this.onBreakpointChange = this.onBreakpointChange.bind(this);
+    this.dragPlaceholder = this.dragPlaceholder.bind(this);
+    this.stopPlaceholder = this.stopPlaceholder.bind(this);
+    this.stopLayoutDrag = this.stopLayoutDrag.bind(this);
   }
 
   createElement(el) {
@@ -71,6 +80,7 @@ class AddRemoveLayout extends React.PureComponent {
   }
 
   onLayoutChange(layout) {
+    console.log('layout changed', layout);
     this.props.onLayoutChange(layout);
     this.setState({layout: layout});
   }
@@ -80,14 +90,87 @@ class AddRemoveLayout extends React.PureComponent {
     this.setState({items: _.reject(this.state.items, {i: i})});
   }
 
+  dragPlaceholder(e, { node }) {
+    const containerRect = this.container.getBoundingClientRect();
+    const left = e.clientX - containerRect.left;
+    const top = e.clientY - containerRect.top;
+    if (left < 0 || top < 0) {
+      this.api.externalDragOut({
+        i: 'placeholder',
+        w: 2,
+        h: 2,
+        e,
+        node,
+        newPosition: {
+          left,
+          top
+        }
+      });
+    } else {
+      this.api.externalDragIn({
+        i: 'placeholder',
+        w: 2,
+        h: 2,
+        e,
+        node,
+        newPosition: {
+          left,
+          top
+        }
+      });
+    }
+  }
+
+  stopPlaceholder(e, { node }) {
+    const containerRect = this.container.getBoundingClientRect();
+    const left = e.clientX - containerRect.left;
+    const top = e.clientY - containerRect.top;
+    this.api.externalDragStop({
+      i: 'placeholder',
+      w: 2,
+      h: 2,
+      e,
+      node,
+      newPosition: {
+        left,
+        top
+      }
+    });
+  }
+
+  stopLayoutDrag(layout) {
+    this.setState({
+      items: layout
+    });
+  }
+
+  setRef(node) {
+    this.container = node;
+  }
+
+  setApi(api) {
+    this.api = api;
+  }
+
   render() {
     return (
       <div>
         <button onClick={this.onAddItem}>Add Item</button>
-        <ResponsiveReactGridLayout onLayoutChange={this.onLayoutChange} onBreakpointChange={this.onBreakpointChange}
-            {...this.props}>
-          {_.map(this.state.items, (el) => this.createElement(el))}
-        </ResponsiveReactGridLayout>
+        <Draggable
+          position={this.state.placeholderPosition}
+          onDrag={this.dragPlaceholder}
+          onStop={this.stopPlaceholder}>
+          <button style={{ position: 'relative', zIndex: 1000 }}>Drag external Item</button>
+        </Draggable>
+        <div ref={this.setRef}>
+          <ResponsiveReactGridLayout
+            refApi={this.setApi}
+            onDragStop={this.stopLayoutDrag}
+            onLayoutChange={this.onLayoutChange}
+            onBreakpointChange={this.onBreakpointChange}>
+            {_.map(this.state.items, (el) => this.createElement(el))}
+          </ResponsiveReactGridLayout>
+        </div>
       </div>
     );
   }
